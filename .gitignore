@@ -1,0 +1,10 @@
+# Office / sistema
+~$*
+.~lock.*#
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Power BI temp
+*.tmp
+*.pbix.bak
