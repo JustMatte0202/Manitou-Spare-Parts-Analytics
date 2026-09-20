@@ -1,0 +1,237 @@
+/* =====================================================================
+   MANITOU ITALIA — AFTER-SALES / SPARE PARTS ANALYTICS
+   Misure DAX per Power BI
+   ---------------------------------------------------------------------
+   Modello a stella. Tabelle:
+     dim_date, dim_region, dim_product_family, dim_part_category,
+     dim_part, dim_dealer
+     fact_parts_orders, fact_inventory_snapshot, fact_financials_real
+   Relazioni (1 -> *):
+     dim_date[Date]            -> fact_parts_orders[Date]
+     dim_part[SKU]             -> fact_parts_orders[SKU]
+     dim_part[SKU]             -> fact_inventory_snapshot[SKU]
+     dim_dealer[DealerID]      -> fact_parts_orders[DealerID]
+     dim_region[RegionID]      -> fact_parts_orders[RegionID]
+     dim_region[RegionID]      -> dim_dealer[RegionID]   (inattiva o singola: usare una sola via)
+     dim_product_family[FamilyID]   -> dim_part[FamilyID]
+     dim_part_category[CategoryID]  -> dim_part[CategoryID]
+   NB: fact_inventory_snapshot ha grana mensile -> creare relazione su
+       dim_date[AnnoMese] (colonna) verso fact_inventory_snapshot[AnnoMese]
+       tramite una dim_date_mese, oppure usare TREATAS (vedi misure stock).
+   ===================================================================== */
+
+
+/* ---------- 1. BASE: DOMANDA, RICAVO, MARGINE ---------- */
+
+Righe Ordine = COUNTROWS ( fact_parts_orders )
+
+Qta Ordinata = SUM ( fact_parts_orders[QtaOrdinata] )
+
+Qta Evasa = SUM ( fact_parts_orders[QtaEvasa] )
+
+Ricavo Ricambi = SUM ( fact_parts_orders[RicavoRiga] )
+
+Costo Ricambi = SUM ( fact_parts_orders[CostoRiga] )
+
+Margine Lordo =
+[Ricavo Ricambi] - [Costo Ricambi]
+
+Margine % =
+DIVIDE ( [Margine Lordo], [Ricavo Ricambi] )
+
+
+/* ---------- 2. DISPONIBILITA' / SERVICE LEVEL ---------- */
+
+Linee in Stockout =
+CALCULATE ( [Righe Ordine], fact_parts_orders[FlagStockout] = 1 )
+
+Line Fill Rate =
+DIVIDE (
+    [Righe Ordine] - [Linee in Stockout],
+    [Righe Ordine]
+)
+/* % di righe d'ordine evase immediatamente da stock */
+
+Unit Fill Rate =
+DIVIDE ( [Qta Evasa], [Qta Ordinata] )
+/* % di pezzi evasi sul totale richiesto */
+
+Linee OTIF =
+CALCULATE ( [Righe Ordine], fact_parts_orders[FlagOTIF] = 1 )
+
+OTIF % =
+DIVIDE ( [Linee OTIF], [Righe Ordine] )
+/* On Time In Full: evaso completo ed entro SLA */
+
+OTIF Gap vs Target =
+[OTIF %] - 0.95
+/* scostamento rispetto al target interno del 95% (parametrizzabile) */
+
+
+/* ---------- 3. ORDINI URGENTI (VOR — Vehicle Off Road) ---------- */
+
+Righe VOR =
+CALCULATE ( [Righe Ordine], fact_parts_orders[TipoOrdine] = "VOR" )
+
+Quota VOR % =
+DIVIDE ( [Righe VOR], [Righe Ordine] )
+
+Fill Rate VOR =
+CALCULATE ( [Line Fill Rate], fact_parts_orders[TipoOrdine] = "VOR" )
+/* il KPI più critico: macchina ferma dal cliente */
+
+
+/* ---------- 4. REVENUE AT RISK (impatto economico stockout) ---------- */
+
+Revenue at Risk =
+CALCULATE (
+    SUM ( fact_parts_orders[RicavoRiga] ),
+    fact_parts_orders[FlagStockout] = 1
+)
+/* ricavo ricambi associato a righe non evase da stock = vendite a rischio
+   di slittamento / perdita verso ricambi non originali */
+
+Margine at Risk =
+CALCULATE (
+    SUMX (
+        fact_parts_orders,
+        fact_parts_orders[RicavoRiga] - fact_parts_orders[CostoRiga]
+    ),
+    fact_parts_orders[FlagStockout] = 1
+)
+
+Revenue at Risk % =
+DIVIDE ( [Revenue at Risk], [Ricavo Ricambi] + [Revenue at Risk] )
+
+
+/* ---------- 5. TIME INTELLIGENCE (richiede dim_date marcata come tabella date) ---------- */
+
+Ricavo Ricambi PY =
+CALCULATE ( [Ricavo Ricambi], SAMEPERIODLASTYEAR ( dim_date[Date] ) )
+
+Var % YoY =
+DIVIDE ( [Ricavo Ricambi] - [Ricavo Ricambi PY], [Ricavo Ricambi PY] )
+
+Ricavo Ricambi YTD =
+TOTALYTD ( [Ricavo Ricambi], dim_date[Date] )
+
+Ricavo Ricambi MAT =
+CALCULATE (
+    [Ricavo Ricambi],
+    DATESINPERIOD ( dim_date[Date], MAX ( dim_date[Date] ), -12, MONTH )
+)
+/* Moving Annual Total — utile per neutralizzare la stagionalità */
+
+
+/* ---------- 6. INVENTARIO / ROTAZIONE STOCK ---------- */
+/* Le misure stock usano TREATAS perché fact_inventory_snapshot è a grana mensile (AnnoMese) */
+
+Valore Giacenza =
+CALCULATE (
+    SUM ( fact_inventory_snapshot[ValoreGiacenza] ),
+    TREATAS ( VALUES ( dim_date[AnnoMese] ), fact_inventory_snapshot[AnnoMese] )
+)
+
+Valore Giacenza Medio =
+AVERAGEX (
+    VALUES ( fact_inventory_snapshot[AnnoMese] ),
+    CALCULATE ( SUM ( fact_inventory_snapshot[ValoreGiacenza] ) )
+)
+
+COGS Annuo =
+CALCULATE (
+    [Costo Ricambi],
+    DATESINPERIOD ( dim_date[Date], MAX ( dim_date[Date] ), -12, MONTH )
+)
+
+Indice Rotazione Stock =
+DIVIDE ( [COGS Annuo], [Valore Giacenza Medio] )
+/* Inventory turns = COGS / giacenza media a valore */
+
+Giorni di Copertura (DIO) =
+DIVIDE ( 365, [Indice Rotazione Stock] )
+/* Days Inventory Outstanding */
+
+Righe Dead Stock =
+CALCULATE (
+    COUNTROWS ( fact_inventory_snapshot ),
+    fact_inventory_snapshot[GiorniCopertura] > 180
+)
+
+Valore Dead Stock = /* capitale immobilizzato: stock con copertura > 180 gg */
+CALCULATE (
+    SUM ( fact_inventory_snapshot[ValoreGiacenza] ),
+    fact_inventory_snapshot[GiorniCopertura] > 180
+)
+/* capitale immobilizzato su parti senza domanda = candidato a sblocco cassa */
+
+% Capitale Immobilizzato =
+DIVIDE ( [Valore Dead Stock], [Valore Giacenza] )
+
+SKU in Stockout (mese) =
+CALCULATE (
+    DISTINCTCOUNT ( fact_inventory_snapshot[SKU] ),
+    fact_inventory_snapshot[FlagStockout] = 1
+)
+
+
+/* ---------- 7. ANALISI ABC / FAST-SLOW MOVERS ---------- */
+
+SKU Distinti = DISTINCTCOUNT ( fact_parts_orders[SKU] )
+
+% Ricavo (Pareto) =
+DIVIDE (
+    [Ricavo Ricambi],
+    CALCULATE ( [Ricavo Ricambi], ALL ( dim_part ) )
+)
+
+Ricavo Cumulato Pareto =
+VAR CurrentRev = [Ricavo Ricambi]
+RETURN
+CALCULATE (
+    [Ricavo Ricambi],
+    FILTER (
+        ALLSELECTED ( dim_part[SKU] ),
+        [Ricavo Ricambi] >= CurrentRev
+    )
+)
+
+% Ricavo Cumulato =
+DIVIDE (
+    [Ricavo Cumulato Pareto],
+    CALCULATE ( [Ricavo Ricambi], ALLSELECTED ( dim_part ) )
+)
+/* per la curva di Pareto: verifica che la classe A (~20% SKU) faccia ~70-80% del ricavo */
+
+
+/* ---------- 8. KPI CARD / SINTESI ESECUTIVA ---------- */
+
+KPI Fill Rate (label) =
+VAR v = [Line Fill Rate]
+RETURN
+FORMAT ( v, "0.0%" ) & IF ( v < 0.92, " ⚠", " ✔" )
+
+Opportunità (Recupero Fill→95%) =
+VAR target = 0.95
+VAR gap = MAX ( 0, target - [Line Fill Rate] )
+RETURN gap * ( [Ricavo Ricambi] + [Revenue at Risk] )
+/* stima del ricavo recuperabile portando il fill rate al 95% */
+
+
+/* ---------- 9. DATI REALI (contesto strategico, da fact_financials_real) ---------- */
+
+Ricavi Gruppo (reale) =
+CALCULATE (
+    SUM ( fact_financials_real[Valore_MEUR] ),
+    fact_financials_real[Voce] = "Ricavi Gruppo"
+)
+
+Ricavi Servizi (reale) =
+CALCULATE (
+    SUM ( fact_financials_real[Valore_MEUR] ),
+    fact_financials_real[Voce] = "Ricavi Services & Solutions"
+)
+
+Peso Servizi su Gruppo (reale) =
+DIVIDE ( [Ricavi Servizi (reale)], [Ricavi Gruppo (reale)] )
+/* mostra perché i ricambi contano: ~16% del fatturato ma in crescita (piano LIFT) */
