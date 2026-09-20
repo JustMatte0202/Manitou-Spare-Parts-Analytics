@@ -5,6 +5,14 @@ Thumbs.db
 desktop.ini
 .DS_Store
 
-# Power BI temp
+# Power BI temp e backup
 *.tmp
 *.pbix.bak
+*_ORIGINALE_BACKUP.pbix
+
+# File di lavoro non attinenti al progetto
+dim_turni.xlsx
+fatti_fermi*.xlsx
+
+# Istruzioni interne
+screenshots/LEGGIMI.md
