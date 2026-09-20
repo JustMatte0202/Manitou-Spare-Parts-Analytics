@@ -1,0 +1,9 @@
+﻿FamilyID;Gamma;Descrizione;Brand;PesoParcoMacchine
+MT;Telescopici da costruzione (MT);Telehandler costruzione;Manitou;0.22
+MLT;Telescopici agricoli (MLT);Telehandler agricolo;Manitou;0.2
+MRT;Telescopici rotativi (MRT);Rotating telehandler;Manitou;0.1
+MI-MC;Carrelli elevatori industriali (MI/MC);Masted forklift;Manitou;0.12
+TMM;Carrelli su autocarro (TMM);Truck mounted forklift;Manitou;0.07
+AWP;Piattaforme aeree (MAN'GO/ATJ);Aerial work platform;Manitou;0.09
+LOAD;Pale compatte / skid steer;Skid/track/articulated loader;Gehl;0.12
+LOAD-M;Pale compatte (Mustang);Skid/track/articulated loader;Mustang;0.08

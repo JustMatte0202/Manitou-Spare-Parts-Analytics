@@ -1,0 +1,11 @@
+﻿CategoryID;Categoria;MargineMedio;ProbCriticita;PrezzoMedio
+C01;Filtri;0,42;0,2;35
+C02;Idraulica;0,34;0,45;180
+C03;Motore;0,3;0,55;320
+C04;Trasmissione;0,31;0,55;410
+C05;Impianto elettrico;0,38;0,4;120
+C06;Freni;0,36;0,5;90
+C07;Pneumatici;0,22;0,15;240
+C08;Parti di usura;0,45;0,25;28
+C09;Cabina / carrozzeria;0,4;0,2;160
+C10;Accessori / attrezzature;0,33;0,1;260
